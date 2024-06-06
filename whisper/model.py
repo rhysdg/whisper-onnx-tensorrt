@@ -6,8 +6,8 @@ import numpy as np
 import requests
 import onnx
 import onnxruntime as ort
-from whisper.decoding import detect_language as detect_language_function, decode as decode_function
-from whisper.utils import onnx_dtype_to_np_dtype_convert
+from decoding import detect_language as detect_language_function, decode as decode_function
+from utils import onnx_dtype_to_np_dtype_convert
 
 
 _MODELS = {
@@ -118,20 +118,22 @@ class OnnxAudioEncoder():
         model: str,
     ):
         super().__init__()
+        #####
+        so = ort.SessionOptions()
+        so.inter_op_num_threads = 10
+        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
 
         self.sess = \
             ort.InferenceSession(
                 path_or_bytes=model_download(name=f'{model}_encoder'),
+                sess_options=so,
                 providers=[
-                    # (
-                    #     'TensorrtExecutionProvider', {
-                    #         'trt_engine_cache_enable': True,
-                    #         'trt_engine_cache_path': '.',
-                    #         'trt_fp16_enable': True,
-                    #     }
-                    # ),
-                    'CUDAExecutionProvider'
+                     
+                     'CUDAExecutionProvider',
+                     'CPUExecutionProvider'
+      
                 ],
+
             )
         self.inputs = {
             input.name: onnx_dtype_to_np_dtype_convert(input.type) \
@@ -161,11 +163,17 @@ class OnnxTextDecoder():
     ):
         super().__init__()
 
+        so = ort.SessionOptions()
+        so.inter_op_num_threads = 10
+        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+   
         self.sess = \
             ort.InferenceSession(
                 path_or_bytes=model_download(name=f'{model}_decoder'),
+                sess_options=so,
                 providers=[
-                    'CUDAExecutionProvider'
+                        'CUDAExecutionProvider',
+                        'CPUExecutionProvider'
                 ],
             )
         self.inputs = {
@@ -193,16 +201,7 @@ class OnnxTextDecoder():
                     "kv_cache": kv_cache.astype(self.inputs["kv_cache"]),
                     "offset": np.array([offset], dtype=self.inputs["offset"]),
                 }
-            )
-        logits: np.ndarray = outputs[0]
-        output_kv_cache: np.ndarray = outputs[1]
-        cross_attention_qks: np.ndarray = outputs[2]
-        return logits.astype(np.float32), output_kv_cache.astype(np.float32)
-
-
-class Whisper():
-    def __init__(
-        self,
+            )  #so.execution_mode = ort.ExecutionMode.ORT_PARALLEL
         dims: ModelDimensions,
         model_name: str,
     ):
@@ -213,11 +212,7 @@ class Whisper():
         self.decoder = OnnxTextDecoder(model=model_name)
 
     def embed_audio(
-        self,
-        mel: np.ndarray,
-    ):
-        return self.encoder(mel)
-
+        self,  #so.execution_mode = ort.ExecutionMode.ORT_PARALLEL
     def logits(
         self,
         tokens: np.ndarray,
