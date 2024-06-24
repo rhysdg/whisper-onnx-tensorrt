@@ -15,5 +15,6 @@ packages
 .pytest_cache
 .ipynb_checkpoints
 dist/
+build/
 
 
